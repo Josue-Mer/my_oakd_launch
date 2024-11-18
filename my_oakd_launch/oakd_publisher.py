@@ -1,9 +1,10 @@
 import rclpy
 from rclpy.node import Node
-from sensor_msgs.msg import Image, CameraInfo
+from sensor_msgs.msg import Image, CameraInfo, Imu
+import cv2
 from cv_bridge import CvBridge
 import depthai as dai
-import cv2
+
 
 class OakDPublisher(Node):
     def __init__(self):
@@ -11,29 +12,33 @@ class OakDPublisher(Node):
         super().__init__('oakd_publisher')
 
         # Publishers for RGB and Depth images
-        self.rgb_pub = self.create_publisher(Image, 'camera/color/image_raw', 10)
+        # self.rgb_pub = self.create_publisher(Image, 'camera/color/image_raw', 10)
         self.depth_pub = self.create_publisher(Image, 'camera/depth/image_rect', 10)
 
         # Publishers for Camera Info
-        self.rgb_info_pub = self.create_publisher(CameraInfo, '/camera/color/camera_info', 10)
+        # self.rgb_info_pub = self.create_publisher(CameraInfo, '/camera/color/camera_info', 10)
         self.depth_info_pub = self.create_publisher(CameraInfo, '/camera/depth/camera_info', 10)
+
+        # Publicador para datos del IMU
+        self.imu_pub = self.create_publisher(Imu, 'oakd_lite/imu', 10)
 
         self.bridge = CvBridge()
         
         # Create pipeline   
         pipeline = dai.Pipeline()
 
-        # Define sources and outputs
-        cam_rgb = pipeline.createColorCamera()
-        cam_rgb.setBoardSocket(dai.CameraBoardSocket.RGB)
-        cam_rgb.setResolution(dai.ColorCameraProperties.SensorResolution.THE_1080_P)
-        cam_rgb.setInterleaved(False)
-        cam_rgb.setColorOrder(dai.ColorCameraProperties.ColorOrder.BGR)
-        cam_rgb.setFps(30)  # Ajusta la velocidad de fotogramas si es necesario
 
-        xout_rgb = pipeline.createXLinkOut()
-        xout_rgb.setStreamName("rgb")
-        cam_rgb.video.link(xout_rgb.input)
+        # Define sources and outputs
+        # cam_rgb = pipeline.createColorCamera()
+        # cam_rgb.setBoardSocket(dai.CameraBoardSocket.RGB)
+        # cam_rgb.setResolution(dai.ColorCameraProperties.SensorResolution.THE_1080_P)
+        # cam_rgb.setInterleaved(False)
+        # cam_rgb.setColorOrder(dai.ColorCameraProperties.ColorOrder.BGR)
+        # cam_rgb.setFps(30)  # Ajusta la velocidad de fotogramas si es necesario
+
+        # xout_rgb = pipeline.createXLinkOut()
+        # xout_rgb.setStreamName("rgb")
+        # cam_rgb.video.link(xout_rgb.input)
 
         stereo = pipeline.createStereoDepth()
         stereo.setConfidenceThreshold(200)
@@ -59,26 +64,79 @@ class OakDPublisher(Node):
         xout_depth.setStreamName("depth")
         stereo.depth.link(xout_depth.input)
 
+        # Configurar nodo IMU
+        imu = pipeline.createIMU()
+        imu.enableIMUSensor(dai.IMUSensor.ACCELEROMETER_RAW, 100)  # Configurar frecuencia del acelerómetro
+        imu.enableIMUSensor(dai.IMUSensor.GYROSCOPE_RAW, 100)      # Configurar frecuencia del giroscopio
+        imu.setBatchReportThreshold(1)  # Número mínimo de muestras antes de enviar
+        imu.setMaxBatchReports(10)      # Número máximo de muestras a enviar de una vez
+
+        # Configurar salida del nodo IMU
+        xout_imu = pipeline.createXLinkOut()
+        xout_imu.setStreamName("imu")
+        imu.out.link(xout_imu.input)
+
         # Connect to device and start pipeline
         self.device = dai.Device(pipeline)
-        self.q_rgb = self.device.getOutputQueue(name="rgb", maxSize=4, blocking=False)
+        # self.q_rgb = self.device.getOutputQueue(name="rgb", maxSize=4, blocking=False)
         self.q_depth = self.device.getOutputQueue(name="depth", maxSize=4, blocking=False)
 
         self.get_logger().info('La cámara inició bacanamente papa')
 
-        self.timer = self.create_timer(0.1, self.publish_frames)
+        self.timer = self.create_timer(0.3, self.publish_frames)
+
+
+        # IMU
+        self.q_imu = self.device.getOutputQueue(name="imu", maxSize=10, blocking=False)
+
+        # Configurar temporizador para publicar datos
+        self.timer = self.create_timer(0.01, self.publish_imu_data)  # Publicar cada 10 ms
+
+        self.get_logger().info("IMU iniciado correctamente")
+
+    
+    def publish_imu_data(self):
+        imu_data = self.q_imu.tryGet()
+        if imu_data is not None:
+            imu_msgs = imu_data.packets
+            for packet in imu_msgs:
+                imu_msg = Imu()
+                imu_msg.header.stamp = self.get_clock().now().to_msg()
+                imu_msg.header.frame_id = 'imu_link'
+
+                # Leer datos del acelerómetro
+                accel = packet.acceleroMeter
+                imu_msg.linear_acceleration.x = accel.x
+                imu_msg.linear_acceleration.y = accel.y
+                imu_msg.linear_acceleration.z = accel.z
+
+                # Leer datos del giroscopio
+                gyro = packet.gyroscope
+                imu_msg.angular_velocity.x = gyro.x
+                imu_msg.angular_velocity.y = gyro.y
+                imu_msg.angular_velocity.z = gyro.z
+
+                # No se incluye orientación (quaternion) en los datos RAW
+                imu_msg.orientation.x = 0.0
+                imu_msg.orientation.y = 0.0
+                imu_msg.orientation.z = 0.0
+                imu_msg.orientation.w = 1.0
+
+                # Publicar el mensaje
+                self.imu_pub.publish(imu_msg)
+
 
     def publish_frames(self):
-        in_rgb = self.q_rgb.tryGet()
+        # in_rgb = self.q_rgb.tryGet()
         in_depth = self.q_depth.tryGet()
 
-        if in_rgb is not None:
-            frame_rgb = in_rgb.getCvFrame()
-            rgb_msg = self.bridge.cv2_to_imgmsg(frame_rgb, encoding="bgr8")
-            self.rgb_pub.publish(rgb_msg)
+        # if in_rgb is not None:
+            # frame_rgb = in_rgb.getCvFrame()
+            # rgb_msg = self.bridge.cv2_to_imgmsg(frame_rgb, encoding="bgr8")
+            # self.rgb_pub.publish(rgb_msg)
 
-            rgb_msg.header.stamp = self.get_clock().now().to_msg()
-            self.rgb_info_pub.publish(self.get_camera_info('rgb', frame_rgb.shape[1], frame_rgb.shape[0]))
+            # rgb_msg.header.stamp = self.get_clock().now().to_msg()
+            # self.rgb_info_pub.publish(self.get_camera_info('rgb', frame_rgb.shape[1], frame_rgb.shape[0]))
 
         if in_depth is not None:
             frame_depth = in_depth.getCvFrame()

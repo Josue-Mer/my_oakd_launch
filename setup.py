@@ -15,8 +15,7 @@ setup(
         'my_oakd_launch.nav_to_target',
         'my_oakd_launch.goal_pose_manual',
         'my_oakd_launch.goal_pose_flag',
-        'my_oakd_launch.coke_tracker',
-        'my_oakd_launch.oakd_camera_publisher'
+        'my_oakd_launch.coke_tracker'
     ],
     data_files=[
         ('share/ament_index/resource_index/packages',
@@ -40,7 +39,6 @@ setup(
             'goal_pose_manual = my_oakd_launch.goal_pose_manual:main',
             'goal_pose_flag = my_oakd_launch.goal_pose_flag:main',
             'coke_tracker = my_oakd_launch.coke_tracker:main',
-            'oakd_camera_publisher = my_oakd_launch.coke_tracker:main',
         ],
     },
 )

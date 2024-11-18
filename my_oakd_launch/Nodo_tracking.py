@@ -10,7 +10,7 @@ from rclpy.node import Node
 from std_msgs.msg import String
 
 # Constants
-SHOW_PREVIEW = True  # Set to False to disable preview on the computer
+SHOW_PREVIEW = False  # Set to False to disable preview on the computer
 SAVE_INTERVAL = 0.2  # Save image at 5 fps
 IMG_MAP_PATH = '/tmp/img_camera.png'
 DATA_FILE_PATH = '/tmp/person_track_data.txt'
